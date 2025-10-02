@@ -16,9 +16,10 @@ jobs:
       - name: Deploy to EC2
         uses: appleboy/ssh-action@v0.1.10
         with:
-          host: ${{ secrets.EC2_HOST }}
+          host: 13.203.207.71
           username: ubuntu
           key: ${{ secrets.EC2_SSH_KEY }}
+
           script: |
             # Update & install required packages
             sudo apt update -y
