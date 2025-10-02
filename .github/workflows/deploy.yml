@@ -2,8 +2,7 @@ name: Deploy Laravel to EC2
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
 
 jobs:
   deploy:
@@ -21,104 +20,46 @@ jobs:
           key: ${{ secrets.CI_CD_EC2 }}
           script: |
             set -e
+            echo "🚀 Deploying Laravel to EC2..."
 
-            echo "🚀 Starting deployment on EC2..."
-
-            # Update system
-            sudo apt-get update -y
-            sudo apt-get upgrade -y
-
-            # Install PHP 8.2 + required extensions + nginx + composer
-            sudo apt-get install -y software-properties-common curl git unzip
-            sudo add-apt-repository ppa:ondrej/php -y
-            sudo apt-get update -y
-            sudo apt-get install -y php8.2 php8.2-cli php8.2-common php8.2-mysql \
-              php8.2-xml php8.2-mbstring php8.2-bcmath php8.2-curl php8.2-fpm nginx composer
-
-            # Enable services
-            sudo systemctl enable php8.2-fpm
-            sudo systemctl enable nginx
-
-            # Prepare Laravel directory
-            if [ ! -d "/var/www/laravel-app" ]; then
-              sudo mkdir -p /var/www/laravel-app
-              sudo chown -R ubuntu:ubuntu /var/www/laravel-app
-            fi
             cd /var/www/laravel-app
 
             # Fix git safe directory issue
             git config --global --add safe.directory /var/www/laravel-app
 
-            # Deploy code
+            # Pull latest code
             if [ ! -d ".git" ]; then
               git clone https://github.com/TalhaHabib088/ci-cd-deployement.git .
             else
-              git reset --hard
-              git pull origin main
+              git fetch origin main
+              git reset --hard origin/main
             fi
 
-
-            # Fix permissions BEFORE composer
+            # Ensure correct permissions for ubuntu
             sudo chown -R ubuntu:ubuntu /var/www/laravel-app
             sudo chmod -R 775 storage bootstrap/cache
 
             # Install dependencies
             composer install --no-interaction --prefer-dist --optimize-autoloader
 
-            # Setup Laravel environment
+            # Deploy .env (from secrets, stored on server)
             if [ ! -f ".env" ]; then
-              cp .env.example .env
-              php artisan key:generate
+              echo "⚠️ No .env found. Please upload it manually once."
             fi
 
-            # Run artisan only if vendor exists
-            if [ -f "vendor/autoload.php" ]; then
-              php artisan migrate --force
-              php artisan config:cache
-              php artisan route:cache
-              php artisan view:cache
-            else
-              echo "❌ vendor/autoload.php missing — composer may have failed."
-              exit 1
-            fi
+            # Run Laravel commands
+            php artisan migrate --force
+            php artisan config:clear
+            php artisan config:cache
+            php artisan route:cache
+            php artisan view:cache
 
-            # Set final permissions
+            # Final permissions for nginx
             sudo chown -R www-data:www-data /var/www/laravel-app
             sudo chmod -R 775 storage bootstrap/cache
-
-            # Configure Nginx for Laravel (only if not already configured)
-            LARAVEL_CONF="/etc/nginx/sites-available/laravel"
-            if [ ! -f "$LARAVEL_CONF" ]; then
-              sudo tee $LARAVEL_CONF > /dev/null <<'EOL'
-              server {
-                  listen 80;
-                  server_name _;
-                  root /var/www/laravel-app/public;
-
-                  index index.php;
-
-                  location / {
-                      try_files \$uri \$uri/ /index.php?\$query_string;
-                  }
-
-                  location ~ \.php\$ {
-                      include snippets/fastcgi-php.conf;
-                      fastcgi_pass unix:/var/run/php/php8.2-fpm.sock;
-                      fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
-                      include fastcgi_params;
-                  }
-
-                  location ~ /\.ht {
-                      deny all;
-                  }
-              }
-              EOL
-              sudo ln -s /etc/nginx/sites-available/laravel /etc/nginx/sites-enabled/
-              sudo rm -f /etc/nginx/sites-enabled/default
-            fi
 
             # Restart services
             sudo systemctl restart php8.2-fpm
             sudo systemctl restart nginx
 
-            echo "✅ Deployment completed!"
+            echo "✅ Deployment complete!"
