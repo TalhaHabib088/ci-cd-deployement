@@ -1,9 +1,9 @@
-name: Deploy Laravel to EC2
+name: Deploy Laravel App to EC2
 
 on:
   push:
     branches:
-      - main
+      - main   # Change if your branch is different
 
 jobs:
   deploy:
