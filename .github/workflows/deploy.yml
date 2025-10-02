@@ -22,6 +22,9 @@ jobs:
             set -e
             echo "🚀 Deploying Laravel to EC2..."
 
+            # Ensure correct ownership from the beginning
+            sudo chown -R ubuntu:ubuntu /var/www/laravel-app || true
+
             cd /var/www/laravel-app
 
             # Fix git safe directory issue
@@ -35,14 +38,14 @@ jobs:
               git reset --hard origin/main
             fi
 
-            # Ensure correct permissions for ubuntu
+            # Permissions again (after pull)
             sudo chown -R ubuntu:ubuntu /var/www/laravel-app
             sudo chmod -R 775 storage bootstrap/cache
 
             # Install dependencies
             composer install --no-interaction --prefer-dist --optimize-autoloader
 
-            # Deploy .env (from secrets, stored on server)
+            # Deploy .env
             if [ ! -f ".env" ]; then
               echo "⚠️ No .env found. Please upload it manually once."
             fi
@@ -63,3 +66,4 @@ jobs:
             sudo systemctl restart nginx
 
             echo "✅ Deployment complete!"
+
