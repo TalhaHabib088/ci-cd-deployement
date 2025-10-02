@@ -18,7 +18,7 @@ jobs:
         with:
           host: 13.203.207.71
           username: ubuntu
-          key: ${{ secrets.EC2_SSH_KEY }}
+          key: ${{ secrets.CI_CD_EC2 }}
           script: |
             # Update system
             sudo apt update -y
