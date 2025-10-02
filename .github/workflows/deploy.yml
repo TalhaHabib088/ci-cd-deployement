@@ -57,4 +57,4 @@ jobs:
             sudo systemctl restart php8.2-fpm
             sudo systemctl restart nginx
 
-            echo "✅ Deployment complete!"
+            echo "✅ Deployment complete! e"
