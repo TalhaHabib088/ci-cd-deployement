@@ -20,34 +20,43 @@ jobs:
           username: ubuntu
           key: ${{ secrets.CI_CD_EC2 }}
           script: |
+            set -e
+
+            echo "🚀 Starting deployment on EC2..."
+
             # Update system
-            sudo apt update -y
-            sudo apt upgrade -y
+            sudo apt-get update -y
+            sudo apt-get upgrade -y
 
-            # Install PHP 8.2 + extensions
-            sudo apt install -y software-properties-common
+            # Install PHP 8.2 + required extensions + nginx + composer
+            sudo apt-get install -y software-properties-common curl git unzip
             sudo add-apt-repository ppa:ondrej/php -y
-            sudo apt update -y
-            sudo apt install -y php8.2 php8.2-cli php8.2-common php8.2-mysql php8.2-xml php8.2-mbstring php8.2-bcmath php8.2-curl php8.2-fpm unzip git curl nginx composer
+            sudo apt-get update -y
+            sudo apt-get install -y php8.2 php8.2-cli php8.2-common php8.2-mysql \
+              php8.2-xml php8.2-mbstring php8.2-bcmath php8.2-curl php8.2-fpm nginx composer
 
-            # Ensure services are enabled
+            # Enable services
             sudo systemctl enable php8.2-fpm
             sudo systemctl enable nginx
 
-            # Create Laravel directory if not exists
+            # Prepare Laravel directory
             if [ ! -d "/var/www/laravel-app" ]; then
               sudo mkdir -p /var/www/laravel-app
               sudo chown -R ubuntu:ubuntu /var/www/laravel-app
             fi
             cd /var/www/laravel-app
 
-            # Deploy code (clone or pull)
+            # Deploy code
             if [ ! -d ".git" ]; then
               git clone https://github.com/TalhaHabib088/ci-cd-deployement.git .
             else
               git reset --hard
               git pull origin main
             fi
+
+            # Fix permissions BEFORE composer
+            sudo chown -R ubuntu:ubuntu /var/www/laravel-app
+            sudo chmod -R 775 storage bootstrap/cache
 
             # Install dependencies
             composer install --no-interaction --prefer-dist --optimize-autoloader
@@ -58,28 +67,31 @@ jobs:
               php artisan key:generate
             fi
 
-            # Run migrations
-            php artisan migrate --force
+            # Run artisan only if vendor exists
+            if [ -f "vendor/autoload.php" ]; then
+              php artisan migrate --force
+              php artisan config:cache
+              php artisan route:cache
+              php artisan view:cache
+            else
+              echo "❌ vendor/autoload.php missing — composer may have failed."
+              exit 1
+            fi
 
-            # Optimize caches
-            php artisan config:cache
-            php artisan route:cache
-            php artisan view:cache
-
-            # Set permissions
+            # Set final permissions
             sudo chown -R www-data:www-data /var/www/laravel-app
-            sudo chmod -R 775 /var/www/laravel-app/storage /var/www/laravel-app/bootstrap/cache
+            sudo chmod -R 775 storage bootstrap/cache
 
-            # Configure Nginx for Laravel
+            # Configure Nginx for Laravel (only if not already configured)
             LARAVEL_CONF="/etc/nginx/sites-available/laravel"
             if [ ! -f "$LARAVEL_CONF" ]; then
-              sudo tee $LARAVEL_CONF > /dev/null <<EOL
+              sudo tee $LARAVEL_CONF > /dev/null <<'EOL'
               server {
                   listen 80;
                   server_name _;
                   root /var/www/laravel-app/public;
 
-                  index index.php index.html index.htm;
+                  index index.php;
 
                   location / {
                       try_files \$uri \$uri/ /index.php?\$query_string;
@@ -104,3 +116,5 @@ jobs:
             # Restart services
             sudo systemctl restart php8.2-fpm
             sudo systemctl restart nginx
+
+            echo "✅ Deployment completed!"
