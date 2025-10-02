@@ -1,33 +1,65 @@
-name: Deploy Laravel App to EC2
+name: Deploy Laravel App
 
 on:
   push:
     branches:
-      - main   # Change if your branch is different
+      - main   # Deploy when pushing to main branch
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
+      - name: Checkout Code
         uses: actions/checkout@v3
 
-      - name: Set up SSH
-        uses: webfactory/ssh-agent@v0.5.4
-        with:
-          ssh-private-key: ${{ secrets.CI_CD_EC2 }}
-
       - name: Deploy to EC2
-        run: |
-          ssh -o StrictHostKeyChecking=no ubuntu@13.203.207.71 << 'EOF'
+        uses: appleboy/ssh-action@v0.1.10
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            # Update & install required packages
+            sudo apt update -y
+            sudo apt install -y git unzip curl nginx php8.1 php8.1-fpm php8.1-mbstring php8.1-xml php8.1-bcmath composer mysql-client
+
+            # Create Laravel directory if not exists
+            if [ ! -d "/var/www/laravel-app" ]; then
+              sudo mkdir -p /var/www/laravel-app
+              sudo chown -R ubuntu:ubuntu /var/www/laravel-app
+            fi
+
             cd /var/www/laravel-app
-            git pull origin main
-            composer install --no-dev --optimize-autoloader
+
+            # If not a git repo, clone it. Else, pull latest.
+            if [ ! -d ".git" ]; then
+              git clone https://github.com/TalhaHabib088/ci-cd-deployement.git .
+            else
+              git reset --hard
+              git pull origin main
+            fi
+
+            # Install dependencies
+            composer install --no-interaction --prefer-dist --optimize-autoloader
+
+            # Copy .env if it doesn’t exist
+            if [ ! -f ".env" ]; then
+              cp .env.example .env
+              php artisan key:generate
+            fi
+
+            # Run migrations
             php artisan migrate --force
+
+            # Optimize Laravel cache
             php artisan config:cache
             php artisan route:cache
             php artisan view:cache
+
+            # Set permissions
+            chmod -R 775 storage bootstrap/cache
+
+            # Restart services
             sudo systemctl restart php8.1-fpm
             sudo systemctl restart nginx
-          EOF
